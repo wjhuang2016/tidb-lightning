@@ -182,7 +182,6 @@ func Run(taskCfg *config.Config) error {
 
 func (l *Lightning) run(taskCfg *config.Config) (err error) {
 	taskCfg.Mydumper.NoSchema = true
-	taskCfg.IsUpdate = true
 	if taskCfg.IsUpdate {
 		taskCfg.TikvImporter.OnDuplicate = config.Update
 	}
