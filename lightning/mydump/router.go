@@ -158,17 +158,17 @@ type RegexRouter struct {
 }
 
 func (r *RegexRouter) Route(path string) (*RouteResult, error) {
-	indexes := r.pattern.FindStringSubmatchIndex(path)
-	if len(indexes) == 0 {
-		return nil, nil
-	}
+	//indexes := r.pattern.FindStringSubmatchIndex(path)
+	//if len(indexes) == 0 {
+	//	return nil, nil
+	//}
 	result := &RouteResult{}
-	for _, e := range r.extractors {
-		err := e.Expand(r.pattern, path, indexes, result)
-		if err != nil {
-			return nil, err
-		}
-	}
+	//for _, e := range r.extractors {
+	//	err := e.Expand(r.pattern, path, indexes, result)
+	//	if err != nil {
+	//		return nil, err
+	//	}
+	//}
 	return result, nil
 }
 

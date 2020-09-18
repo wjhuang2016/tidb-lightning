@@ -236,7 +236,7 @@ func (*importer) MakeEmptyRows() Rows {
 	return kvPairs(nil)
 }
 
-func (*importer) NewEncoder(tbl table.Table, options *SessionOptions) Encoder {
+func (*importer) NewEncoder(tbl table.Table, options *SessionOptions, update bool) Encoder {
 	return NewTableKVEncoder(tbl, options)
 }
 

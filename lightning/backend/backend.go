@@ -105,7 +105,7 @@ type AbstractBackend interface {
 	ShouldPostProcess() bool
 
 	// NewEncoder creates an encoder of a TiDB table.
-	NewEncoder(tbl table.Table, options *SessionOptions) Encoder
+	NewEncoder(tbl table.Table, options *SessionOptions, update bool) Encoder
 
 	OpenEngine(ctx context.Context, engineUUID uuid.UUID) error
 
@@ -197,8 +197,8 @@ func (be Backend) MakeEmptyRows() Rows {
 	return be.abstract.MakeEmptyRows()
 }
 
-func (be Backend) NewEncoder(tbl table.Table, options *SessionOptions) Encoder {
-	return be.abstract.NewEncoder(tbl, options)
+func (be Backend) NewEncoder(tbl table.Table, options *SessionOptions, update bool) Encoder {
+	return be.abstract.NewEncoder(tbl, options, update)
 }
 
 func (be Backend) ShouldPostProcess() bool {

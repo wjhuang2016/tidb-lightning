@@ -199,7 +199,7 @@ func NewRestoreControllerWithPauser(
 			return nil, err
 		}
 	case config.BackendTiDB:
-		backend = kv.NewTiDBBackend(tidbMgr.db, cfg.TikvImporter.OnDuplicate)
+		backend = kv.NewTiDBBackend(tidbMgr.db, cfg.TikvImporter.OnDuplicate, cfg.Where)
 	case config.BackendLocal:
 		backend, err = kv.NewLocalBackend(ctx, tls, cfg.TiDB.PdAddr, cfg.TikvImporter.RegionSplitSize,
 			cfg.TikvImporter.SortedKVDir, cfg.TikvImporter.RangeConcurrency, cfg.TikvImporter.SendKVPairs,
@@ -1870,6 +1870,12 @@ func (cr *chunkRestore) encodeLoop(
 			readDurStart := time.Now()
 			err = cr.parser.ReadRow()
 			columnNames := cr.parser.Columns()
+			if columnNames == nil {
+				columnNames = make([]string, 0)
+				for _, col := range t.encTable.Cols() {
+					columnNames = append(columnNames, col.Name.String())
+				}
+			}
 			newOffset, rowID = cr.parser.Pos()
 			switch errors.Cause(err) {
 			case nil:
@@ -1935,7 +1941,7 @@ func (cr *chunkRestore) restore(
 		SQLMode:          rc.cfg.TiDB.SQLMode,
 		Timestamp:        cr.chunk.Timestamp,
 		RowFormatVersion: rc.rowFormatVer,
-	})
+	}, rc.cfg.IsUpdate)
 	kvsCh := make(chan []deliveredKVs, maxKVQueueSize)
 	deliverCompleteCh := make(chan deliverResult)
 

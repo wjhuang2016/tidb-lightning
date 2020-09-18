@@ -1126,7 +1126,7 @@ func (local *local) MakeEmptyRows() Rows {
 	return kvPairs(nil)
 }
 
-func (local *local) NewEncoder(tbl table.Table, options *SessionOptions) Encoder {
+func (local *local) NewEncoder(tbl table.Table, options *SessionOptions, update bool) Encoder {
 	return NewTableKVEncoder(tbl, options)
 }
 

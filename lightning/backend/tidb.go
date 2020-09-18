@@ -41,6 +41,9 @@ type tidbRow string
 
 type tidbRows []tidbRow
 
+var InTxn bool
+var TxnCurrCnt int64
+
 // MarshalLogArray implements the zapcore.ArrayMarshaler interface
 func (row tidbRows) MarshalLogArray(encoder zapcore.ArrayEncoder) error {
 	for _, r := range row {
@@ -50,28 +53,30 @@ func (row tidbRows) MarshalLogArray(encoder zapcore.ArrayEncoder) error {
 }
 
 type tidbEncoder struct {
-	mode mysql.SQLMode
-	tbl  table.Table
-	se   *session
+	mode   mysql.SQLMode
+	tbl    table.Table
+	se     *session
+	update bool
 }
 
 type tidbBackend struct {
 	db          *sql.DB
 	onDuplicate string
+	where       string
 }
 
 // NewTiDBBackend creates a new TiDB backend using the given database.
 //
 // The backend does not take ownership of `db`. Caller should close `db`
 // manually after the backend expired.
-func NewTiDBBackend(db *sql.DB, onDuplicate string) Backend {
+func NewTiDBBackend(db *sql.DB, onDuplicate string, where string) Backend {
 	switch onDuplicate {
-	case config.ReplaceOnDup, config.IgnoreOnDup, config.ErrorOnDup:
+	case config.ReplaceOnDup, config.IgnoreOnDup, config.ErrorOnDup, config.Update:
 	default:
 		log.L().Warn("unsupported action on duplicate, overwrite with `replace`")
 		onDuplicate = config.ReplaceOnDup
 	}
-	return MakeBackend(&tidbBackend{db: db, onDuplicate: onDuplicate})
+	return MakeBackend(&tidbBackend{db: db, onDuplicate: onDuplicate, where: where})
 }
 
 func (row tidbRow) ClassifyAndAppend(data *Rows, checksum *verification.KVChecksum, _ *Rows, _ *verification.KVChecksum) {
@@ -226,11 +231,71 @@ func (enc *tidbEncoder) appendSQL(sb *strings.Builder, datum *types.Datum, col *
 
 func (*tidbEncoder) Close() {}
 
+func Reverse(s string) (result string) {
+	for _, v := range s {
+		result = string(v) + result
+	}
+	return
+}
+
 func (enc *tidbEncoder) Encode(logger log.Logger, row []types.Datum, _ int64, columnPermutation []int) (Row, error) {
 	cols := enc.tbl.Cols()
 
 	var encoded strings.Builder
 	encoded.Grow(8 * len(row))
+
+	var encodedWhere strings.Builder
+	encodedWhere.Grow(8 * len(row))
+
+	if enc.update {
+		for i, field := range row {
+			if i != 0 {
+				encoded.WriteByte(',')
+				encodedWhere.WriteString(" AND ")
+			}
+			encoded.WriteString(cols[i].Name.String())
+			encoded.WriteString("=")
+
+			encodedWhere.WriteString(cols[i].Name.String())
+			encodedWhere.WriteString("=")
+
+			if err := enc.appendSQL(&encodedWhere, &field, cols[columnPermutation[i]]); err != nil {
+				logger.Error("tidb encode failed",
+					zap.Array("original", rowArrayMarshaler(row)),
+					zap.Int("originalCol", i),
+					log.ShortError(err),
+				)
+				return nil, err
+			}
+
+			switch cols[i].EvalType() {
+			case types.ETString:
+				encoded.WriteString("REVERSE(")
+			}
+
+			if err := enc.appendSQL(&encoded, &field, cols[columnPermutation[i]]); err != nil {
+				logger.Error("tidb encode failed",
+					zap.Array("original", rowArrayMarshaler(row)),
+					zap.Int("originalCol", i),
+					log.ShortError(err),
+				)
+				return nil, err
+			}
+
+			switch cols[i].EvalType() {
+			case types.ETString:
+				encoded.WriteString(")")
+			case types.ETInt, types.ETReal, types.ETDecimal:
+				encoded.WriteString("*2")
+			}
+		}
+
+		encoded.WriteString("WHERE ")
+		encoded.WriteString(encodedWhere.String())
+
+		return tidbRow(encoded.String()), nil
+	}
+
 	encoded.WriteByte('(')
 	for i, field := range row {
 		if i != 0 {
@@ -278,7 +343,7 @@ func (be *tidbBackend) CheckRequirements() error {
 	return nil
 }
 
-func (be *tidbBackend) NewEncoder(tbl table.Table, options *SessionOptions) Encoder {
+func (be *tidbBackend) NewEncoder(tbl table.Table, options *SessionOptions, update bool) Encoder {
 	var se *session
 	if options.SQLMode.HasStrictMode() {
 		se = newSession(options)
@@ -286,7 +351,7 @@ func (be *tidbBackend) NewEncoder(tbl table.Table, options *SessionOptions) Enco
 		se.vars.SkipASCIICheck = false
 	}
 
-	return &tidbEncoder{mode: options.SQLMode, tbl: tbl, se: se}
+	return &tidbEncoder{mode: options.SQLMode, tbl: tbl, se: se, update: update}
 }
 
 func (be *tidbBackend) OpenEngine(context.Context, uuid.UUID) error {
@@ -294,6 +359,9 @@ func (be *tidbBackend) OpenEngine(context.Context, uuid.UUID) error {
 }
 
 func (be *tidbBackend) CloseEngine(context.Context, uuid.UUID) error {
+	if config.MaxTxnBatch > 0 && InTxn {
+		be.db.ExecContext(context.TODO(), "commit")
+	}
 	return nil
 }
 
@@ -311,6 +379,8 @@ func (be *tidbBackend) WriteRows(ctx context.Context, _ uuid.UUID, tableName str
 		return nil
 	}
 
+	update := false
+
 	var insertStmt strings.Builder
 	switch be.onDuplicate {
 	case config.ReplaceOnDup:
@@ -319,41 +389,80 @@ func (be *tidbBackend) WriteRows(ctx context.Context, _ uuid.UUID, tableName str
 		insertStmt.WriteString("INSERT IGNORE INTO ")
 	case config.ErrorOnDup:
 		insertStmt.WriteString("INSERT INTO ")
+	case config.Update:
+		update = true
 	}
 
 	insertStmt.WriteString(tableName)
-	if len(columnNames) > 0 {
-		insertStmt.WriteByte('(')
-		for i, colName := range columnNames {
+
+	if update {
+		for _, row := range rows {
+			if config.MaxTxnBatch > 0 && !InTxn {
+				be.db.ExecContext(ctx, "begin")
+				InTxn = true
+			}
+
+			insertStmt.Reset()
+			insertStmt.WriteString("UPDATE ")
+			insertStmt.WriteString(tableName)
+			insertStmt.WriteString("SET ")
+			insertStmt.WriteString(string(row))
+
+			if len(be.where) > 0 {
+				insertStmt.WriteString(" AND (")
+				insertStmt.WriteString(be.where)
+				insertStmt.WriteString(")")
+			}
+
+			// Retry will be done externally, so we're not going to retry here.
+			_, err := be.db.ExecContext(ctx, insertStmt.String())
+			if err != nil {
+				log.L().Error("execute statement failed",
+					zap.Array("rows", rows), zap.String("stmt", insertStmt.String()), zap.Error(err))
+			}
+			if err != nil {
+				return err
+			}
+			TxnCurrCnt+=1
+			if config.MaxTxnBatch > 0 && TxnCurrCnt == config.MaxTxnBatch {
+				be.db.ExecContext(ctx, "commit")
+				InTxn = false
+				TxnCurrCnt = 0
+			}
+		}
+	} else {
+		if len(columnNames) > 0 {
+			insertStmt.WriteByte('(')
+			for i, colName := range columnNames {
+				if i != 0 {
+					insertStmt.WriteByte(',')
+				}
+				common.WriteMySQLIdentifier(&insertStmt, colName)
+			}
+			insertStmt.WriteByte(')')
+		}
+		insertStmt.WriteString(" VALUES")
+
+		// Note: we are not going to do interpolation (prepared statements) to avoid
+		// complication arise from data length overflow of BIT and BINARY columns
+
+		for i, row := range rows {
 			if i != 0 {
 				insertStmt.WriteByte(',')
 			}
-			common.WriteMySQLIdentifier(&insertStmt, colName)
+			insertStmt.WriteString(string(row))
 		}
-		insertStmt.WriteByte(')')
-	}
-	insertStmt.WriteString(" VALUES")
 
-	// Note: we are not going to do interpolation (prepared statements) to avoid
-	// complication arise from data length overflow of BIT and BINARY columns
-
-	for i, row := range rows {
-		if i != 0 {
-			insertStmt.WriteByte(',')
+		// Retry will be done externally, so we're not going to retry here.
+		_, err := be.db.ExecContext(ctx, insertStmt.String())
+		if err != nil {
+			log.L().Error("execute statement failed",
+				zap.Array("rows", rows), zap.String("stmt", insertStmt.String()), zap.Error(err))
 		}
-		insertStmt.WriteString(string(row))
+		return errors.Trace(err)
 	}
 
-	// Retry will be done externally, so we're not going to retry here.
-	_, err := be.db.ExecContext(ctx, insertStmt.String())
-	if err != nil {
-		log.L().Error("execute statement failed",
-			zap.Array("rows", rows), zap.String("stmt", insertStmt.String()), zap.Error(err))
-	}
-	failpoint.Inject("FailIfImportedSomeRows", func() {
-		panic("forcing failure due to FailIfImportedSomeRows, before saving checkpoint")
-	})
-	return errors.Trace(err)
+	return nil
 }
 
 func (be *tidbBackend) FetchRemoteTableModels(schemaName string) (tables []*model.TableInfo, err error) {
@@ -363,7 +472,7 @@ func (be *tidbBackend) FetchRemoteTableModels(schemaName string) (tables []*mode
 	}
 	err = s.Transact(context.Background(), "fetch table columns", func(c context.Context, tx *sql.Tx) error {
 		rows, e := tx.Query(`
-			SELECT table_name, group_concat(column_name SEPARATOR '\n')
+			SELECT table_name, group_concat(column_name SEPARATOR '\n'), group_concat(DATA_TYPE SEPARATOR '\n')
 			FROM information_schema.columns
 			WHERE table_schema = ?
 			GROUP BY table_name;
@@ -374,11 +483,12 @@ func (be *tidbBackend) FetchRemoteTableModels(schemaName string) (tables []*mode
 		defer rows.Close()
 
 		for rows.Next() {
-			var tableName, columnNamesConcat string
-			if e := rows.Scan(&tableName, &columnNamesConcat); e != nil {
+			var tableName, columnNamesConcat, columnTypeConcat string
+			if e := rows.Scan(&tableName, &columnNamesConcat, &columnTypeConcat); e != nil {
 				return e
 			}
 			columnNames := strings.Split(columnNamesConcat, "\n")
+			columnTypes := strings.Split(columnTypeConcat, "\n")
 			columns := make([]*model.ColumnInfo, 0, len(columnNames))
 			for i, columnName := range columnNames {
 				columns = append(columns, &model.ColumnInfo{
@@ -386,6 +496,14 @@ func (be *tidbBackend) FetchRemoteTableModels(schemaName string) (tables []*mode
 					Offset: i,
 					State:  model.StatePublic,
 				})
+				switch columnTypes[i] {
+				case "decimal", "double", "float", "mediumint", "int", "bigint", "smallint", "tinyint":
+					columns[i].Tp = mysql.TypeLong
+				case "text", "longtext", "mediumtext", "char", "varchar":
+					columns[i].Tp = mysql.TypeVarchar
+				default:
+					columns[i].Tp = mysql.TypeDate
+				}
 			}
 			tables = append(tables, &model.TableInfo{
 				Name:       model.NewCIStr(tableName),

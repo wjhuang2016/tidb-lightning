@@ -15,7 +15,6 @@ package mydump
 
 import (
 	"context"
-	"path/filepath"
 	"sort"
 
 	"github.com/pingcap/br/pkg/storage"
@@ -152,7 +151,7 @@ func NewMyDumpLoaderWithStore(ctx context.Context, cfg *config.Config, store sto
 		tableIndexMap: make(map[filter.Table]int),
 	}
 
-	if err := setup.setup(ctx, mdl.store); err != nil {
+	if err := setup.setup(ctx, mdl.store, cfg.TableName); err != nil {
 		return nil, errors.Trace(err)
 	}
 
@@ -200,7 +199,7 @@ type FileInfo struct {
 // Will sort tables by table size, this means that the big table is imported
 // at the latest, which to avoid large table take a long time to import and block
 // small table to release index worker.
-func (s *mdLoaderSetup) setup(ctx context.Context, store storage.ExternalStorage) error {
+func (s *mdLoaderSetup) setup(ctx context.Context, store storage.ExternalStorage, tableName string) error {
 	/*
 		Mydumper file names format
 			db    —— {db}-schema-create.sql
@@ -238,6 +237,7 @@ func (s *mdLoaderSetup) setup(ctx context.Context, store storage.ExternalStorage
 
 	// Sql file for restore data
 	for _, fileInfo := range s.tableDatas {
+		fileInfo.TableName.Name = tableName
 		// set a dummy `FileInfo` here without file meta because we needn't restore the table schema
 		tableMeta, dbExists, tableExists := s.insertTable(FileInfo{TableName: fileInfo.TableName})
 		if !s.loader.noSchema {
@@ -277,38 +277,16 @@ func (s *mdLoaderSetup) listFiles(ctx context.Context, store storage.ExternalSto
 	err := store.WalkDir(ctx, &storage.WalkOption{}, func(path string, size int64) error {
 		logger := log.With(zap.String("path", path))
 
-		res, err := s.loader.fileRouter.Route(filepath.ToSlash(path))
-		if err != nil {
-			return errors.Annotatef(err, "apply file routing on file '%s' failed", path)
-		}
-		if res == nil {
-			logger.Info("[loader] file is filtered by file router")
-			return nil
-		}
-
 		info := FileInfo{
-			TableName: filter.Table{Schema: res.Schema, Name: res.Name},
-			FileMeta:  SourceFileMeta{Path: path, Type: res.Type, Compression: res.Compression, SortKey: res.Key},
+			TableName: filter.Table{Schema: "test", Name: "tbtp3at0"},
+			FileMeta:  SourceFileMeta{Path: path, Type: SourceTypeCSV, Compression: CompressionNone, SortKey: ""},
 			Size:      size,
 		}
 
-		if s.loader.shouldSkip(&info.TableName) {
-			logger.Debug("[filter] ignoring table file")
+		s.tableDatas = append(s.tableDatas, info)
 
-			return nil
-		}
-
-		switch res.Type {
-		case SourceTypeSchemaSchema:
-			s.dbSchemas = append(s.dbSchemas, info)
-		case SourceTypeTableSchema:
-			s.tableSchemas = append(s.tableSchemas, info)
-		case SourceTypeSQL, SourceTypeCSV, SourceTypeParquet:
-			s.tableDatas = append(s.tableDatas, info)
-		}
-
-		logger.Info("file route result", zap.String("schema", res.Schema),
-			zap.String("table", res.Name), zap.Stringer("type", res.Type))
+		logger.Info("file route result", zap.String("schema", "test"),
+			zap.String("table", "tbtp3at0"))
 
 		return nil
 	})

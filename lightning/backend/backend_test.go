@@ -324,5 +324,5 @@ func (s *backendSuite) TestNewEncoder(c *C) {
 	options := &kv.SessionOptions{SQLMode: mysql.ModeANSIQuotes, Timestamp: 1234567890, RowFormatVersion: "1"}
 	s.mockBackend.EXPECT().NewEncoder(nil, options).Return(encoder)
 
-	c.Assert(s.mockBackend.NewEncoder(nil, options), Equals, encoder)
+	c.Assert(s.mockBackend.NewEncoder(nil, options, false), Equals, encoder)
 }

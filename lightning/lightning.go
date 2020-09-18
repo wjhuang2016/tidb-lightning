@@ -174,7 +174,22 @@ func (l *Lightning) RunServer() error {
 
 var taskCfgRecorderKey struct{}
 
+func Run(taskCfg *config.Config) error {
+	cfg := config.NewGlobalConfig()
+	l := New(cfg)
+	return l.run(taskCfg)
+}
+
 func (l *Lightning) run(taskCfg *config.Config) (err error) {
+	taskCfg.Mydumper.NoSchema = true
+	taskCfg.IsUpdate = true
+	if taskCfg.IsUpdate {
+		taskCfg.TikvImporter.OnDuplicate = config.Update
+	}
+	taskCfg.TxnBatch = 0
+	backend.InTxn = false
+	backend.TxnCurrCnt = 0
+	config.MaxTxnBatch = taskCfg.TxnBatch
 	common.PrintInfo("lightning", func() {
 		log.L().Info("cfg", zap.Stringer("cfg", taskCfg))
 	})
@@ -215,7 +230,6 @@ func (l *Lightning) run(taskCfg *config.Config) (err error) {
 	if err != nil {
 		return errors.Trace(err)
 	}
-
 	loadTask := log.L().Begin(zap.InfoLevel, "load data source")
 	var mdl *mydump.MDLoader
 	mdl, err = mydump.NewMyDumpLoaderWithStore(ctx, taskCfg, s)

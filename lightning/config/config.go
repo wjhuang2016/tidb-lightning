@@ -62,11 +62,13 @@ const (
 	IgnoreOnDup = "ignore"
 	// ErrorOnDup indicates using INSERT INTO to insert data, which would violate PK or UNIQUE constraint
 	ErrorOnDup = "error"
+	Update = "update"
 )
 
 var (
 	defaultConfigPaths    = []string{"tidb-lightning.toml", "conf/tidb-lightning.toml"}
 	supportedStorageTypes = []string{"file", "local", "s3"}
+	MaxTxnBatch int64
 )
 
 type DBStore struct {
@@ -103,7 +105,11 @@ type Config struct {
 	Routes       []*router.TableRule `toml:"routes" json:"routes"`
 	Security     Security            `toml:"security" json:"security"`
 
-	BWList filter.MySQLReplicationRules `toml:"black-white-list" json:"black-white-list"`
+	BWList    filter.MySQLReplicationRules `toml:"black-white-list" json:"black-white-list"`
+	TableName string
+	TxnBatch  int64
+	IsUpdate  bool
+	Where string
 }
 
 func (c *Config) String() string {

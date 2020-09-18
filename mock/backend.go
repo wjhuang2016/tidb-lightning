@@ -157,7 +157,7 @@ func (mr *MockBackendMockRecorder) MaxChunkSize() *gomock.Call {
 }
 
 // NewEncoder mocks base method
-func (m *MockBackend) NewEncoder(arg0 table.Table, arg1 *backend.SessionOptions) backend.Encoder {
+func (m *MockBackend) NewEncoder(tbl table.Table, options *backend.SessionOptions, update bool) backend.Encoder {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "NewEncoder", arg0, arg1)
 	ret0, _ := ret[0].(backend.Encoder)

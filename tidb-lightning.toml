@@ -55,7 +55,7 @@ max-backups = 14
 # Whether to enable checkpoints.
 # While importing, Lightning will record which tables have been imported, so even if Lightning or other component
 # crashed, we could start from a known good state instead of redoing everything.
-enable = true
+enable = false
 # The schema name (database name) to store the checkpoints
 schema = "tidb_lightning_checkpoint"
 # Where to store the checkpoints.
@@ -73,7 +73,7 @@ driver = "file"
 
 [tikv-importer]
 # Delivery backend, can be "importer", "local" or "tidb".
-backend = "importer"
+backend = "tidb"
 # Address of tikv-importer when the backend is 'importer'
 addr = "127.0.0.1:8287"
 # What to do on duplicated record (unique key conflict) when the backend is 'tidb'. Possible values are:
@@ -111,9 +111,9 @@ read-block-size = 65536 # Byte (default = 64 KB)
 batch-import-ratio = 0.75
 
 # mydumper local source data directory
-data-source-dir = "/tmp/export-20180328-200751"
+data-source-dir = "/Users/bba/pc/tidb-lightning/data"
 # if no-schema is set true, lightning will get schema information from tidb-server directly without creating them.
-no-schema=false
+no-schema=true
 # the character set of the schema files; only supports one of:
 #  - utf8mb4: the schema files must be encoded as UTF-8, otherwise will emit errors
 #  - gb18030: the schema files must be encoded as GB-18030, otherwise will emit errors
@@ -144,7 +144,7 @@ strict-format = false
 #default-file-rules = false
 
 # only import tables if the wildcard rules are matched. See documention for details.
-filter = ['*.*']
+filter = ['*.csv']
 
 # CSV files are imported according to MySQL's LOAD DATA INFILE rules.
 [mydumper.csv]
@@ -153,7 +153,7 @@ separator = ','
 # string delimiter, can either be an ASCII character or empty string.
 delimiter = '"'
 # whether the CSV files contain a header. If true, the first line will be skipped
-header = true
+header = false
 # whether the CSV contains any NULL value. If true, all columns from CSV cannot be NULL.
 not-null = false
 # if non-null = false (i.e. CSV can contain NULL), fields equal to this value will be treated as NULL
