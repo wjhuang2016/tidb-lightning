@@ -1,4 +1,4 @@
-module github.com/wjhuang2016/tidb-lightning
+module github.com/pingcap/tidb-lightning
 
 go 1.13
 
