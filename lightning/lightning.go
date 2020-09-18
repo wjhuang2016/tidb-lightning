@@ -187,6 +187,8 @@ func (l *Lightning) run(taskCfg *config.Config) (err error) {
 		taskCfg.TikvImporter.OnDuplicate = config.Update
 	} else if taskCfg.IsDelete {
 		taskCfg.TikvImporter.OnDuplicate = config.Delete
+	} else {
+		taskCfg.TikvImporter.OnDuplicate = config.ErrorOnDup
 	}
 	taskCfg.TxnBatch = 0
 	backend.InTxn = false
