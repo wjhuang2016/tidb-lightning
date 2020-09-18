@@ -62,13 +62,14 @@ const (
 	IgnoreOnDup = "ignore"
 	// ErrorOnDup indicates using INSERT INTO to insert data, which would violate PK or UNIQUE constraint
 	ErrorOnDup = "error"
-	Update = "update"
+	Update     = "update"
+	Delete     = "delete"
 )
 
 var (
 	defaultConfigPaths    = []string{"tidb-lightning.toml", "conf/tidb-lightning.toml"}
 	supportedStorageTypes = []string{"file", "local", "s3"}
-	MaxTxnBatch int64
+	MaxTxnBatch           int64
 )
 
 type DBStore struct {
@@ -109,7 +110,8 @@ type Config struct {
 	TableName string
 	TxnBatch  int64
 	IsUpdate  bool
-	Where string
+	IsDelete  bool
+	Where     string
 }
 
 func (c *Config) String() string {

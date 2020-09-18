@@ -182,8 +182,11 @@ func Run(taskCfg *config.Config) error {
 
 func (l *Lightning) run(taskCfg *config.Config) (err error) {
 	taskCfg.Mydumper.NoSchema = true
+	taskCfg.TikvImporter.Backend = "tidb"
 	if taskCfg.IsUpdate {
 		taskCfg.TikvImporter.OnDuplicate = config.Update
+	} else if taskCfg.IsDelete {
+		taskCfg.TikvImporter.OnDuplicate = config.Delete
 	}
 	taskCfg.TxnBatch = 0
 	backend.InTxn = false

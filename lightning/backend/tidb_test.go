@@ -90,7 +90,7 @@ func (s *mysqlSuite) TestWriteRowsReplaceOnDup(c *C) {
 	for i := 0; i < len(cols); i++ {
 		perms = append(perms, i)
 	}
-	encoder := s.backend.NewEncoder(s.tbl, &kv.SessionOptions{SQLMode: 0, Timestamp: 1234567890, RowFormatVersion: "1"}, false)
+	encoder := s.backend.NewEncoder(s.tbl, &kv.SessionOptions{SQLMode: 0, Timestamp: 1234567890, RowFormatVersion: "1"}, false, false)
 	row, err := encoder.Encode(logger, []types.Datum{
 		types.NewUintDatum(18446744073709551615),
 		types.NewIntDatum(-9223372036854775808),
@@ -130,7 +130,7 @@ func (s *mysqlSuite) TestWriteRowsIgnoreOnDup(c *C) {
 	indexRows := ignoreBackend.MakeEmptyRows()
 	indexChecksum := verification.MakeKVChecksum(0, 0, 0)
 
-	encoder := ignoreBackend.NewEncoder(s.tbl, &kv.SessionOptions{}, false)
+	encoder := ignoreBackend.NewEncoder(s.tbl, &kv.SessionOptions{}, false, false)
 	row, err := encoder.Encode(logger, []types.Datum{
 		types.NewIntDatum(1),
 	}, 1, []int{0})
@@ -158,7 +158,7 @@ func (s *mysqlSuite) TestWriteRowsErrorOnDup(c *C) {
 	indexRows := ignoreBackend.MakeEmptyRows()
 	indexChecksum := verification.MakeKVChecksum(0, 0, 0)
 
-	encoder := ignoreBackend.NewEncoder(s.tbl, &kv.SessionOptions{}, false)
+	encoder := ignoreBackend.NewEncoder(s.tbl, &kv.SessionOptions{}, false, false)
 	row, err := encoder.Encode(logger, []types.Datum{
 		types.NewIntDatum(1),
 	}, 1, []int{0})
@@ -182,7 +182,7 @@ func (s *mysqlSuite) TestStrictMode(c *C) {
 	c.Assert(err, IsNil)
 
 	bk := kv.NewTiDBBackend(s.dbHandle, config.ErrorOnDup, "")
-	encoder := bk.NewEncoder(tbl, &kv.SessionOptions{SQLMode: mysql.ModeStrictAllTables}, false)
+	encoder := bk.NewEncoder(tbl, &kv.SessionOptions{SQLMode: mysql.ModeStrictAllTables}, false, false)
 
 	logger := log.L()
 	_, err = encoder.Encode(logger, []types.Datum{

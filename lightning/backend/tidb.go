@@ -57,6 +57,7 @@ type tidbEncoder struct {
 	tbl    table.Table
 	se     *session
 	update bool
+	delete bool
 }
 
 type tidbBackend struct {
@@ -71,7 +72,7 @@ type tidbBackend struct {
 // manually after the backend expired.
 func NewTiDBBackend(db *sql.DB, onDuplicate string, where string) Backend {
 	switch onDuplicate {
-	case config.ReplaceOnDup, config.IgnoreOnDup, config.ErrorOnDup, config.Update:
+	case config.ReplaceOnDup, config.IgnoreOnDup, config.ErrorOnDup, config.Update, config.Delete:
 	default:
 		log.L().Warn("unsupported action on duplicate, overwrite with `replace`")
 		onDuplicate = config.ReplaceOnDup
@@ -294,6 +295,25 @@ func (enc *tidbEncoder) Encode(logger log.Logger, row []types.Datum, _ int64, co
 		encoded.WriteString(encodedWhere.String())
 
 		return tidbRow(encoded.String()), nil
+	} else if enc.delete {
+		for i, field := range row {
+			if i != 0 {
+				encoded.WriteString(" AND ")
+			}
+
+			encoded.WriteString(cols[i].Name.String())
+			encoded.WriteString("=")
+
+			if err := enc.appendSQL(&encoded, &field, cols[columnPermutation[i]]); err != nil {
+				logger.Error("tidb encode failed",
+					zap.Array("original", rowArrayMarshaler(row)),
+					zap.Int("originalCol", i),
+					log.ShortError(err),
+				)
+				return nil, err
+			}
+		}
+		return tidbRow(encoded.String()), nil
 	}
 
 	encoded.WriteByte('(')
@@ -343,7 +363,7 @@ func (be *tidbBackend) CheckRequirements() error {
 	return nil
 }
 
-func (be *tidbBackend) NewEncoder(tbl table.Table, options *SessionOptions, update bool) Encoder {
+func (be *tidbBackend) NewEncoder(tbl table.Table, options *SessionOptions, update bool, delete bool) Encoder {
 	var se *session
 	if options.SQLMode.HasStrictMode() {
 		se = newSession(options)
@@ -351,7 +371,7 @@ func (be *tidbBackend) NewEncoder(tbl table.Table, options *SessionOptions, upda
 		se.vars.SkipASCIICheck = false
 	}
 
-	return &tidbEncoder{mode: options.SQLMode, tbl: tbl, se: se, update: update}
+	return &tidbEncoder{mode: options.SQLMode, tbl: tbl, se: se, update: update, delete: delete}
 }
 
 func (be *tidbBackend) OpenEngine(context.Context, uuid.UUID) error {
@@ -380,6 +400,7 @@ func (be *tidbBackend) WriteRows(ctx context.Context, _ uuid.UUID, tableName str
 	}
 
 	update := false
+	delete := false
 
 	var insertStmt strings.Builder
 	switch be.onDuplicate {
@@ -391,9 +412,49 @@ func (be *tidbBackend) WriteRows(ctx context.Context, _ uuid.UUID, tableName str
 		insertStmt.WriteString("INSERT INTO ")
 	case config.Update:
 		update = true
+	case config.Delete:
+		delete = true
 	}
 
 	insertStmt.WriteString(tableName)
+
+	if delete {
+		for _, row := range rows {
+			if config.MaxTxnBatch > 0 && !InTxn {
+				be.db.ExecContext(ctx, "begin")
+				InTxn = true
+			}
+
+			insertStmt.Reset()
+			insertStmt.WriteString("DELETE FROM ")
+			insertStmt.WriteString(tableName)
+			insertStmt.WriteString(" WHERE ")
+			insertStmt.WriteString(string(row))
+
+			if len(be.where) > 0 {
+				insertStmt.WriteString(" AND (")
+				insertStmt.WriteString(be.where)
+				insertStmt.WriteString(")")
+			}
+
+			// Retry will be done externally, so we're not going to retry here.
+			_, err := be.db.ExecContext(ctx, insertStmt.String())
+			if err != nil {
+				log.L().Error("execute statement failed",
+					zap.Array("rows", rows), zap.String("stmt", insertStmt.String()), zap.Error(err))
+			}
+			if err != nil {
+				return err
+			}
+			TxnCurrCnt+=1
+			if config.MaxTxnBatch > 0 && TxnCurrCnt == config.MaxTxnBatch {
+				be.db.ExecContext(ctx, "commit")
+				InTxn = false
+				TxnCurrCnt = 0
+			}
+		}
+		return nil
+	}
 
 	if update {
 		for _, row := range rows {

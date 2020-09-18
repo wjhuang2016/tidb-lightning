@@ -1941,7 +1941,7 @@ func (cr *chunkRestore) restore(
 		SQLMode:          rc.cfg.TiDB.SQLMode,
 		Timestamp:        cr.chunk.Timestamp,
 		RowFormatVersion: rc.rowFormatVer,
-	}, rc.cfg.IsUpdate)
+	}, rc.cfg.IsUpdate, rc.cfg.IsDelete)
 	kvsCh := make(chan []deliveredKVs, maxKVQueueSize)
 	deliverCompleteCh := make(chan deliverResult)
 
