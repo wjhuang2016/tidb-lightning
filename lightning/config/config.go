@@ -113,6 +113,7 @@ type Config struct {
 	IsUpdate  bool
 	IsDelete  bool
 	Where     string
+	LogLevel string
 }
 
 func (c *Config) String() string {

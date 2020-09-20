@@ -176,6 +176,7 @@ var taskCfgRecorderKey struct{}
 
 func Run(taskCfg *config.Config) error {
 	cfg := config.NewGlobalConfig()
+	cfg.TiDB.LogLevel = taskCfg.LogLevel
 	l := New(cfg)
 	return l.run(taskCfg)
 }
