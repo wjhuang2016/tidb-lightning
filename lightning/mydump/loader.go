@@ -199,7 +199,7 @@ type FileInfo struct {
 // Will sort tables by table size, this means that the big table is imported
 // at the latest, which to avoid large table take a long time to import and block
 // small table to release index worker.
-func (s *mdLoaderSetup) setup(ctx context.Context, store interface{}, tableName string, schemaName string) error {
+func (s *mdLoaderSetup) setup(ctx context.Context, store storage.ExternalStorage, tableName string, schemaName string) error {
 	/*
 		Mydumper file names format
 			db    —— {db}-schema-create.sql
