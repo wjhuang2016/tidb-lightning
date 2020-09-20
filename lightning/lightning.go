@@ -190,7 +190,6 @@ func (l *Lightning) run(taskCfg *config.Config) (err error) {
 	} else {
 		taskCfg.TikvImporter.OnDuplicate = config.ErrorOnDup
 	}
-	taskCfg.TxnBatch = 0
 	backend.InTxn = false
 	backend.TxnCurrCnt = 0
 	config.MaxTxnBatch = taskCfg.TxnBatch
