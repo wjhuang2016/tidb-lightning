@@ -108,6 +108,7 @@ type Config struct {
 
 	BWList    filter.MySQLReplicationRules `toml:"black-white-list" json:"black-white-list"`
 	TableName string
+	SchemaName string
 	TxnBatch  int64
 	IsUpdate  bool
 	IsDelete  bool

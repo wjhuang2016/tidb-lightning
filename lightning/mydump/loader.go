@@ -151,7 +151,7 @@ func NewMyDumpLoaderWithStore(ctx context.Context, cfg *config.Config, store sto
 		tableIndexMap: make(map[filter.Table]int),
 	}
 
-	if err := setup.setup(ctx, mdl.store, cfg.TableName); err != nil {
+	if err := setup.setup(ctx, mdl.store, cfg.TableName, cfg.SchemaName); err != nil {
 		return nil, errors.Trace(err)
 	}
 
@@ -199,7 +199,7 @@ type FileInfo struct {
 // Will sort tables by table size, this means that the big table is imported
 // at the latest, which to avoid large table take a long time to import and block
 // small table to release index worker.
-func (s *mdLoaderSetup) setup(ctx context.Context, store storage.ExternalStorage, tableName string) error {
+func (s *mdLoaderSetup) setup(ctx context.Context, store interface{}, tableName string, schemaName string) error {
 	/*
 		Mydumper file names format
 			db    —— {db}-schema-create.sql
@@ -238,6 +238,7 @@ func (s *mdLoaderSetup) setup(ctx context.Context, store storage.ExternalStorage
 	// Sql file for restore data
 	for _, fileInfo := range s.tableDatas {
 		fileInfo.TableName.Name = tableName
+		fileInfo.TableName.Schema = schemaName
 		// set a dummy `FileInfo` here without file meta because we needn't restore the table schema
 		tableMeta, dbExists, tableExists := s.insertTable(FileInfo{TableName: fileInfo.TableName})
 		if !s.loader.noSchema {
