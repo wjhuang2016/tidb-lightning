@@ -251,7 +251,7 @@ func (enc *tidbEncoder) Encode(logger log.Logger, row []types.Datum, _ int64, co
 	if enc.update {
 		for i, field := range row {
 			if i != 0 {
-				encoded.WriteByte(',')
+				encoded.WriteByte(', ')
 				encodedWhere.WriteString(" AND ")
 			}
 			encoded.WriteString(cols[i].Name.String())
@@ -291,7 +291,7 @@ func (enc *tidbEncoder) Encode(logger log.Logger, row []types.Datum, _ int64, co
 			}
 		}
 
-		encoded.WriteString("WHERE ")
+		encoded.WriteString(" WHERE ")
 		encoded.WriteString(encodedWhere.String())
 
 		return tidbRow(encoded.String()), nil
@@ -466,7 +466,7 @@ func (be *tidbBackend) WriteRows(ctx context.Context, _ uuid.UUID, tableName str
 			insertStmt.Reset()
 			insertStmt.WriteString("UPDATE ")
 			insertStmt.WriteString(tableName)
-			insertStmt.WriteString("SET ")
+			insertStmt.WriteString(" SET ")
 			insertStmt.WriteString(string(row))
 
 			if len(be.where) > 0 {
